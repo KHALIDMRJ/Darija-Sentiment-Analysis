@@ -1,153 +1,105 @@
 """
 Darija Sentiment Analyzer — Live Demo
-======================================
-Deploy this on HuggingFace Spaces (free hosting):
-  1. Create account at huggingface.co
-  2. New Space → SDK: Gradio
-  3. Upload this file as app.py
-  4. Upload your trained model or use the HuggingFace model ID
-
+Uses local TF-IDF model (no HuggingFace required)
 Author: Khalid Morjan
 """
 
 import gradio as gr
-from transformers import pipeline
+import pickle
+import re
 
-# ── Load model ──
-# Option A: Use your uploaded HuggingFace model (after pushing)
-MODEL_ID = "KHALIDMRJ/darija-sentiment-camelbert"
+MODEL_LOADED = False
+tfidf = None
+clf = None
 
-# Option B: Load from local folder (for testing)
-# MODEL_ID = "models/camelbert/final"
+def load_model():
+    global tfidf, clf, MODEL_LOADED
+    try:
+        with open('models/tfidf_vectorizer.pkl', 'rb') as f:
+            tfidf = pickle.load(f)
+        with open('models/logistic_regression.pkl', 'rb') as f:
+            clf = pickle.load(f)
+        MODEL_LOADED = True
+        print("✅ Local TF-IDF model loaded!")
+    except Exception as e:
+        print(f"⚠️ Model not found: {e}")
 
-print(f"Loading model: {MODEL_ID}")
-try:
-    classifier = pipeline(
-        "text-classification",
-        model=MODEL_ID,
-        top_k=None  # Return all label scores
-    )
-    print("✅ Model loaded!")
-except Exception as e:
-    print(f"⚠️ Model not found: {e}")
-    print("Using fallback — train and push your model first (Notebook 03)")
-    classifier = None
+load_model()
 
+def clean_darija(text):
+    if not isinstance(text, str):
+        return ''
+    text = re.sub(r'https?://\S+|www\.\S+', '', text)
+    text = re.sub(r'[@#]\w+', '', text)
+    text = re.sub(r'[\u0617-\u061A\u064B-\u0652]', '', text)
+    text = re.sub(r'[إأآا]', 'ا', text)
+    text = re.sub(r'[ىي]', 'ي', text)
+    text = re.sub(r'ة', 'ه', text)
+    text = re.sub(r'(.)\1{2,}', r'\1\1', text)
+    text = re.sub(r'[^\w\s\u0600-\u06FF]', ' ', text)
+    return re.sub(r'\s+', ' ', text).strip().lower()
 
-# ── Inference function ──
 def analyze_sentiment(text):
     if not text or not text.strip():
-        return "⚠️ Please enter some text.", {}, ""
-
-    if classifier is None:
-        return "⚠️ Model not loaded. Run Notebook 03 first.", {}, ""
-
-    results = classifier(text, truncation=True, max_length=128)[0]
-
-    # Sort by score
-    results_sorted = sorted(results, key=lambda x: x['score'], reverse=True)
-    top = results_sorted[0]
-
-    label = top['label']
-    score = top['score']
-
-    # Emoji and color
+        return "⚠️ Entrez un texte.", {}, ""
+    if not MODEL_LOADED:
+        return "⚠️ Modèle non chargé. Lancez Notebook 02 d'abord.", {}, ""
+    cleaned = clean_darija(text)
+    vec = tfidf.transform([cleaned])
+    label = clf.predict(vec)[0]
+    proba = clf.predict_proba(vec)[0]
+    classes = clf.classes_
+    confidence = {c.capitalize(): round(float(p), 4) for c, p in zip(classes, proba)}
     emoji_map = {
-        'positive': '😊 POSITIVE',
-        'negative': '😞 NEGATIVE',
-        'neutral':  '😐 NEUTRAL'
+        'positive': '😊 POSITIVE — إيجابي',
+        'negative': '😞 NEGATIVE — سلبي',
+        'neutral':  '😐 NEUTRAL — محايد'
     }
-    display_label = emoji_map.get(label.lower(), label.upper())
+    display = emoji_map.get(label, label.upper())
+    top_score = max(proba)
+    certainty = "Très confiant (>90%)" if top_score > 0.90 else "Confiant (>75%)" if top_score > 0.75 else "Modéré"
+    return display, confidence, certainty
 
-    # Confidence scores for all labels
-    confidence = {r['label'].capitalize(): round(r['score'], 4) for r in results_sorted}
-
-    # Interpretation
-    if score > 0.90:
-        certainty = "Very confident"
-    elif score > 0.75:
-        certainty = "Confident"
-    elif score > 0.60:
-        certainty = "Moderately confident"
-    else:
-        certainty = "Uncertain"
-
-    detail = f"{certainty} ({score:.1%})"
-
-    return display_label, confidence, detail
-
-
-# ── Example sentences ──
 examples = [
-    ["مزيان بزاف هاد الخبر شكراً على المعلومة 👍"],
-    ["هاد الحكومة مكتخدمش والو، مقبولش هاد القرار 😡"],
-    ["واش صحيح هاد الخبر؟ مفهمتش شي حاجة"],
-    ["c'est vraiment bien ce projet, bravo mzyan!"],
-    ["هاد المشروع ممتاز ويستحق الدعم والتشجيع"],
-    ["لا لا لا، هاد الشي غلط بالكامل، خسارة"],
+    ["مزيان بزاف هاد الخبر شكراً 👍"],
+    ["هاد الحكومة مكتخدمش والو 😡"],
+    ["واش صحيح هاد الخبر؟"],
+    ["c'est vraiment bien ce projet mzyan!"],
+    ["هاد المشروع ممتاز ويستحق الدعم"],
+    ["لا لا لا غلط بالكامل خسارة"],
 ]
 
-# ── Gradio Interface ──
-with gr.Blocks(
-    title="Darija Sentiment Analyzer — تحليل المشاعر بالدارجة",
-    theme=gr.themes.Soft(primary_hue="blue")
-) as demo:
-
+with gr.Blocks(title="Darija Sentiment Analyzer", theme=gr.themes.Soft()) as demo:
     gr.Markdown("""
     # 🇲🇦 Darija Sentiment Analyzer — تحليل المشاعر بالدارجة
-    
-    **First open-source sentiment analysis system for Moroccan Arabic (Darija)**
-    
-    Supports: Arabic script · Arabizi (Franco-Arabic) · Mixed Arabic/French
-    
+    **First open-source Moroccan Arabic sentiment analysis — Accuracy: 90.03%**
     ---
     """)
-
     with gr.Row():
         with gr.Column(scale=2):
             text_input = gr.Textbox(
-                label="Enter Darija text — اكتب جملة بالدارجة",
-                placeholder="مثال: مزيان بزاف هاد الخبر... / c'est vraiment bien...",
+                label="اكتب جملة بالدارجة",
+                placeholder="مثال: مزيان بزاف هاد الخبر...",
                 lines=4,
-                rtl=True
             )
-            analyze_btn = gr.Button("🔍 Analyze Sentiment — تحليل المشاعر",
-                                    variant="primary", size="lg")
-
+            analyze_btn = gr.Button("🔍 Analyser — تحليل", variant="primary", size="lg")
         with gr.Column(scale=1):
-            label_output = gr.Label(label="Sentiment Prediction")
-            confidence_output = gr.Label(label="Confidence Scores", num_top_classes=3)
-            detail_output = gr.Textbox(label="Certainty Level", interactive=False)
+            label_output = gr.Textbox(label="Résultat", interactive=False, lines=2)
+            confidence_output = gr.Label(label="Scores de confiance", num_top_classes=3)
+            certainty_output = gr.Textbox(label="Certitude", interactive=False)
 
-    gr.Examples(
-        examples=examples,
-        inputs=text_input,
-        label="📝 Example sentences — أمثلة"
-    )
+    gr.Examples(examples=examples, inputs=text_input, label="📝 Exemples")
 
     gr.Markdown("""
     ---
-    ### 📊 About This Model
-    
-    | | |
-    |---|---|
-    | **Architecture** | CAMeL-BERT (fine-tuned) |
-    | **Dataset** | 8,619 Darija comments (Kaggle + HuggingFace + Hespress) |
-    | **Labels** | Positive · Negative · Neutral |
-    | **Author** | Khalid Morjan — Sultan Moulay Slimane University |
-    | **GitHub** | [KHALIDMRJ/Darija-Sentiment-Analysis](https://github.com/KHALIDMRJ) |
+    **Modèle:** TF-IDF + Logistic Regression | **Accuracy:** 90.03% | **Dataset:** 8,619 commentaires Darija
+    **Auteur:** Khalid Morjan — Sultan Moulay Slimane University, Morocco
     """)
 
-    analyze_btn.click(
-        fn=analyze_sentiment,
-        inputs=text_input,
-        outputs=[label_output, confidence_output, detail_output]
-    )
-    text_input.submit(
-        fn=analyze_sentiment,
-        inputs=text_input,
-        outputs=[label_output, confidence_output, detail_output]
-    )
+    analyze_btn.click(fn=analyze_sentiment, inputs=text_input,
+                      outputs=[label_output, confidence_output, certainty_output])
+    text_input.submit(fn=analyze_sentiment, inputs=text_input,
+                      outputs=[label_output, confidence_output, certainty_output])
 
 if __name__ == "__main__":
-    demo.launch(share=True)
+    demo.launch(share=False)
