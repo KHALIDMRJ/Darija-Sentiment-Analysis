@@ -113,7 +113,7 @@ Every component was **built from scratch** — no existing Darija NLP library wa
 
 <div align="center">
 
-<img src="assets/images/gradio_demo_screenshot.png" alt="Darija Sentiment Analyzer — Live Demo" width="90%"/>
+<img src="assets/images/Capture_demo.png" alt="Darija Sentiment Analyzer — Live Demo" width="90%"/>
 
 *Real inference: "هاد المشروع ممتاز ويستحق الدعم" → POSITIVE (71% confidence)*
 
