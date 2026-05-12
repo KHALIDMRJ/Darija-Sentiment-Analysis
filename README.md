@@ -672,7 +672,7 @@ Building AI systems for underrepresented languages and real-world problems.
 
 [![GitHub](https://img.shields.io/badge/GitHub-KHALIDMRJ-181717?style=for-the-badge&logo=github)](https://github.com/KHALIDMRJ)
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=for-the-badge&logo=linkedin)](https://linkedin.com/in/khalid-morjan)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=for-the-badge&logo=linkedin)](https://linkedin.com/in/khalid-morjan-7130b0360)
 
 </td>
 </tr>
